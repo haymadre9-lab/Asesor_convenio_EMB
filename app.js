@@ -339,14 +339,16 @@ function viewAsk() {
       <div id="pins">${state.pinned.map(id => `<span class="pin">${esc(shortCite(id))}<button type="button" data-unpin="${esc(id)}" aria-label="Quitar ${esc(shortCite(id))}">×</button></span>`).join('')}</div>
       <div class="row">
         <button class="btn primary" id="go" type="button">Buscar artículos</button>
-        <button class="btn" id="ai" type="button" ${state.busy ? 'disabled' : ''}>Preguntar a Claude</button>
+        <button class="btn" id="ai" type="button" ${state.busy ? 'disabled' : ''}>${key ? 'Preguntar a Claude' : 'Copiar para Claude.ai'}</button>
+        ${key ? '<button class="btn small" id="aicopy" type="button">Copiar para Claude.ai</button>' : ''}
         ${state.thread.length ? '<button class="btn small" id="newq" type="button">Nueva consulta</button>' : ''}
       </div>
-      <p class="note" style="margin:8px 2px 0">${key ? 'Claude recibe solo tu pregunta y los artículos encontrados.' : 'Sin clave de Claude: la búsqueda funciona igual, sin conexión.'}</p>
+      <p class="note" style="margin:8px 2px 0">${key ? 'Claude recibe solo tu pregunta y los artículos encontrados.' : 'Sin clave API: «Copiar para Claude.ai» copia tu pregunta con los artículos exactos; pégala en un chat nuevo de Claude (usa tu suscripción, sin coste extra).'}</p>
     </section>
     <div id="out"></div>`;
   $('#go').onclick = () => doSearch();
   $('#ai').onclick = () => doAsk();
+  const ac = $('#aicopy'); if (ac) ac.onclick = () => askCopy();
   const nq = $('#newq'); if (nq) nq.onclick = () => { state.thread = []; state.results = []; state.q = ''; state.lastQ = ''; state.pinned = []; viewAsk(); };
   $('#q').addEventListener('input', e => { state.q = e.target.value; });
   $('#q').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSearch(); });
@@ -382,9 +384,26 @@ function doSearch() {
   const t = $('#out .ticket'); if (t && !state.thread.length) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
   return q;
 }
+/* Sin clave API: se copia todo el encargo para pegarlo en Claude.ai (usa la suscripción, no la API) */
+function copyForClaudeAi(system, content) {
+  const text = `${system}\n\n=====\n\n${content}\n\n=====\nResponde siguiendo las instrucciones de arriba. Los IDs entre corchetes (p. ej. [CONV-11]) identifican cada pasaje: cítalos tal cual.`;
+  const done = () => {
+    toast('Copiado. Pégalo en un chat nuevo de Claude');
+    const o = $('#copied'); if (o) o.hidden = false;
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done)); else fallbackCopy(text, done);
+}
+function askCopy() {
+  const q = (state.q || '').trim(); if (!q) { toast('Escribe primero tu duda'); return; }
+  remember(q); state.results = search(q); state.searched = true;
+  const chosen = passagesFor(q, state.pinned);
+  const content = `${MODES[state.mode]}\n\nPASAJES DISPONIBLES (fuente oficial)\n\n${passagesText(chosen)}\n\n=====\nPREGUNTA DEL USUARIO\n${q}`;
+  copyForClaudeAi(systemPrompt(), content);
+  renderOut();
+}
 async function doAsk() {
   const q = (state.q || '').trim(); if (!q) { toast('Escribe primero tu duda'); return; }
-  if (!store.get('key', '')) { toast('Falta la clave de Claude: ponla en Ajustes'); location.hash = '#/ajustes'; return; }
+  if (!store.get('key', '')) { askCopy(); return; }
   if (!navigator.onLine) { doSearch(); toast('Sin conexión: te enseño los artículos'); return; }
   if (state.busy) return;
   state.busy = true; state.results = search(q); state.searched = true; remember(q);

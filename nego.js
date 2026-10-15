@@ -462,8 +462,8 @@ function nAnalyze() {
         ${hasConv ? `<label><input type="checkbox" id="ncmp" ${NS.compare ? 'checked' : ''}> Comparar con mis otros convenios</label>` : ''}
         ${hasCost ? `<label><input type="checkbox" id="ncost" ${NS.useCost ? 'checked' : ''}> Añadir el cálculo de costes</label>` : `<span class="note">Sin datos de plantilla: rellena «Costes» para que el análisis lleve números reales.</span>`}
       </div>
-      <div class="row"><button class="btn primary" id="ngo" type="button" ${NS.busy ? 'disabled' : ''}>Analizar con Claude</button>${NS.thread.length ? '<button class="btn small" id="nnew" type="button">Empezar de nuevo</button>' : ''}</div>
-      <p class="note" style="margin:8px 2px 0">${key ? 'Claude recibe tu texto, los artículos relevantes, el documento elegido y, si lo marcas, el cálculo de costes. No pongas nombres ni datos personales de compañeros.' : 'Necesita la clave de Claude (Ajustes) y conexión. Sin ellas tienes «Comparar» y «Costes».'}</p>
+      <div class="row"><button class="btn primary" id="ngo" type="button" ${NS.busy ? 'disabled' : ''}>${key ? 'Analizar con Claude' : 'Copiar para Claude.ai'}</button>${key ? '<button class="btn small" id="ncopy" type="button">Copiar para Claude.ai</button>' : ''}${NS.thread.length ? '<button class="btn small" id="nnew" type="button">Empezar de nuevo</button>' : ''}</div>
+      <p class="note" style="margin:8px 2px 0">${key ? 'Claude recibe tu texto, los artículos relevantes, el documento elegido y, si lo marcas, el cálculo de costes. No pongas nombres ni datos personales de compañeros.' : 'Sin clave API: copio la tarea completa (instrucciones, artículos, documento y costes) para que la pegues en un chat nuevo de Claude.ai con tu suscripción. Sin conexión tienes «Comparar» y «Costes».'}</p>
     </section><div id="nout"></div>`;
   v.querySelectorAll('[data-task]').forEach(b => b.onclick = () => { NS.task = b.dataset.task; nsSave(); nAnalyze(); });
   $('#nt').addEventListener('input', e => { NS.text = e.target.value; nsSave(); });
@@ -471,6 +471,7 @@ function nAnalyze() {
   const nc = $('#ncmp'); if (nc) nc.onchange = e => { NS.compare = e.target.checked; nsSave(); };
   const nk = $('#ncost'); if (nk) nk.onchange = e => { NS.useCost = e.target.checked; nsSave(); };
   $('#ngo').onclick = () => negoRun();
+  const ncp = $('#ncopy'); if (ncp) ncp.onclick = () => negoCopy();
   const nn = $('#nnew'); if (nn) nn.onclick = () => { NS.thread = []; NS.first = null; NS.text = ''; nsSave(); nAnalyze(); };
   nRenderOut();
 }
@@ -494,21 +495,31 @@ function nRenderOut() {
   });
   const f = $('#nfgo'); if (f) f.onclick = () => { const q = $('#nf').value.trim(); if (q) negoRun(q); };
 }
+function negoBuild() {
+  const T = NTASK[NS.task];
+  const doc = USERDOCS.find(d => d.id === NS.docId);
+  if (!NS.text.trim() && !doc && NS.task !== 'pedir') { toast('Escribe o elige primero qué analizar'); return null; }
+  const chosen = negoPassages(NS.task, NS.text + (doc ? ' ' + doc.text.slice(0, 1500) : ''), doc && doc.id);
+  const docBlock = doc ? `\n\nDOCUMENTO DEL USUARIO [${doc.id}] «${doc.name}» (${KIND[doc.kind]}). Texto completo${doc.text.length > 45000 ? ' (recortado a 45.000 caracteres)' : ''}:\n${cleanText(doc.text).slice(0, 45000)}` : '';
+  const costBlock = (NS.useCost && costConfigured()) ? `\n\n${costSummaryText()}` : '';
+  const q = NS.text.trim() || (doc ? `Analiza «${doc.name}».` : 'Repaso general del convenio.');
+  const first = `${T.prompt}\n\nPASAJES DISPONIBLES (convenio EMB, leyes y documentos del usuario)\n\n${passagesText(chosen)}${docBlock}${costBlock}\n\n=====\nLO QUE PLANTEA EL USUARIO\n${q}`;
+  return { chosen, q, first };
+}
+function negoCopy() {
+  const b = negoBuild(); if (!b) return;
+  NS.used = b.chosen; nRenderOut();
+  copyForClaudeAi(negoSystem(), b.first);
+}
 async function negoRun(follow) {
-  if (!store.get('key', '')) { toast('Falta la clave de Claude: ponla en Ajustes'); location.hash = '#/ajustes'; return; }
+  if (!store.get('key', '')) { negoCopy(); return; }
   if (!navigator.onLine) { toast('Sin conexión: usa Comparar o Costes'); return; }
   if (NS.busy) return;
   const T = NTASK[NS.task];
   let q, messages;
   if (!follow) {
-    const doc = USERDOCS.find(d => d.id === NS.docId);
-    if (!NS.text.trim() && !doc && NS.task !== 'pedir') { toast('Escribe o elige primero qué analizar'); return; }
-    const chosen = negoPassages(NS.task, NS.text + (doc ? ' ' + doc.text.slice(0, 1500) : ''), doc && doc.id);
-    NS.used = chosen;
-    const docBlock = doc ? `\n\nDOCUMENTO DEL USUARIO [${doc.id}] «${doc.name}» (${KIND[doc.kind]}). Texto completo${doc.text.length > 45000 ? ' (recortado a 45.000 caracteres)' : ''}:\n${cleanText(doc.text).slice(0, 45000)}` : '';
-    const costBlock = (NS.useCost && costConfigured()) ? `\n\n${costSummaryText()}` : '';
-    q = NS.text.trim() || (doc ? `Analiza «${doc.name}».` : 'Repaso general del convenio.');
-    NS.first = `${T.prompt}\n\nPASAJES DISPONIBLES (convenio EMB, leyes y documentos del usuario)\n\n${passagesText(chosen)}${docBlock}${costBlock}\n\n=====\nLO QUE PLANTEA EL USUARIO\n${q}`;
+    const b = negoBuild(); if (!b) return;
+    NS.used = b.chosen; q = b.q; NS.first = b.first;
     NS.thread = [];
     messages = [{ role: 'user', content: NS.first }];
   } else {

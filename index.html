@@ -25,6 +25,7 @@
   <a href="#/ajustes" data-tab="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg><span>Ajustes</span></a>
 </nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="copied" id="copied" hidden role="dialog" aria-label="Copiado para Claude"><p><strong>Copiado.</strong> Abre Claude, empieza un chat nuevo y pega (mantén pulsado → Pegar).</p><div class="row"><a class="btn primary" href="https://claude.ai/new" target="_blank" rel="noopener" id="openclaude">Abrir Claude</a><button class="btn small" type="button" onclick="this.closest('.copied').hidden=true">Cerrar</button></div></div>
 <script src="data/corpus.js"></script>
 <script src="nego.js"></script>
 <script src="app.js"></script>
